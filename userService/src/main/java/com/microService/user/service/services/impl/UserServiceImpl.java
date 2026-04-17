@@ -4,6 +4,7 @@ import com.microService.user.service.entity.Hotel;
 import com.microService.user.service.entity.Ratings;
 import com.microService.user.service.entity.User;
 import com.microService.user.service.exception.ResourceNotFoundException;
+import com.microService.user.service.external.services.HotelService;
 import com.microService.user.service.repository.UserRepository;
 import com.microService.user.service.services.UserServices;
 import org.springframework.stereotype.Service;
@@ -17,10 +18,12 @@ public class UserServiceImpl implements UserServices {
 
     private final UserRepository userRepository;
     private final RestTemplate restTemplate;
+    private final HotelService hotelService;
 
-    public UserServiceImpl(UserRepository userRepository, RestTemplate restTemplate) {
+    public UserServiceImpl(UserRepository userRepository, RestTemplate restTemplate, HotelService hotelService) {
         this.userRepository = userRepository;
         this.restTemplate = restTemplate;
+        this.hotelService = hotelService;
     }
 
     @Override
@@ -52,8 +55,7 @@ public class UserServiceImpl implements UserServices {
             // set Hotel details for each rating
             for (Ratings rating : ratings) {
                 try{
-                    Hotel hotel = restTemplate.getForObject(
-                            "http://HOTELSERVICE/hotels/" + rating.getHotelId(), Hotel.class);
+                    Hotel hotel = hotelService.getHotel(rating.getHotelId());
 
                     rating.setHotel(hotel);
                 }
