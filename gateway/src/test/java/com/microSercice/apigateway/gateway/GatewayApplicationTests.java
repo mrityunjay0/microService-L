@@ -1,4 +1,4 @@
-package com.microSercice.gateway;
+package com.microSercice.apigateway.gateway;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
