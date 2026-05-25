@@ -2,6 +2,7 @@ package com.microService.user.service.controller;
 
 import com.microService.user.service.entity.User;
 import com.microService.user.service.services.UserServices;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -36,14 +37,12 @@ public class UserController {
         return ResponseEntity.ok(allUsers);
     }
 
-
     // get user by id
     @GetMapping("/{userId}")
     public ResponseEntity<User> getUserById(@PathVariable Long userId) {
         User userById = userService.getUserById(userId);
         return ResponseEntity.ok(userById);
     }
-
 
     // update user by id
     @PutMapping("/{userId}")

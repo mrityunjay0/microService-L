@@ -7,7 +7,9 @@ import com.microService.user.service.exception.ResourceNotFoundException;
 import com.microService.user.service.external.services.HotelService;
 import com.microService.user.service.repository.UserRepository;
 import com.microService.user.service.services.UserServices;
+import io.github.resilience4j.circuitbreaker.annotation.CircuitBreaker;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestTemplate;
 
 import java.util.Arrays;
@@ -31,36 +33,45 @@ public class UserServiceImpl implements UserServices {
         return userRepository.save(user);
     }
 
+    // Get all users with their ratings and hotel details
     @Override
+    @CircuitBreaker(name = "getAllUsersCircuitBreaker", fallbackMethod = "getAllUsersFallback")
     public List<User> getAllUsers() {
+
         List<User> users = userRepository.findAll();
+
         if (users.isEmpty()) {
             throw new ResourceNotFoundException("No users found");
         }
 
-        // Fetch ratings for each user from the Ratings Service
+        // Fetch ratings for each user
         for (User user : users) {
-            // Fetch ratings for the user from the Ratings Service
+
             Ratings[] ratingsList;
-            try {
+            try{
                 ratingsList = restTemplate.getForObject(
-                        "http://RATINGSERVICE/ratings/user/" + user.getId(), Ratings[].class);
+                        "http://RATINGSERVICE/ratings/user/" + user.getId(),
+                        Ratings[].class );
             }
-            catch (Exception e) {
-                ratingsList = new Ratings[0]; // If there's an error fetching ratings, set it to an empty array
+            catch (HttpClientErrorException.NotFound ex) {
+                ratingsList = new Ratings[0]; // User has no ratings
+            }
+
+            if(ratingsList == null) {
+                ratingsList = new Ratings[0]; // Handle null response from the Ratings Service
             }
 
             List<Ratings> ratings = Arrays.asList(ratingsList);
 
-            // set Hotel details for each rating
+            // Fetch hotel details for each rating
             for (Ratings rating : ratings) {
-                try{
-                    Hotel hotel = hotelService.getHotel(rating.getHotelId());
 
+                try {
+                    Hotel hotel = hotelService.getHotel(rating.getHotelId());
                     rating.setHotel(hotel);
                 }
-                catch (Exception e) {
-                    rating.setHotel(null); // If there's an error fetching hotel details, set it to null
+                catch (HttpClientErrorException.NotFound ex) {
+                    rating.setHotel(null); // Hotel not found, set to null
                 }
             }
 
@@ -69,39 +80,79 @@ public class UserServiceImpl implements UserServices {
 
         return users;
     }
+    public List<User> getAllUsersFallback(Exception ex) {
 
+        if(ex instanceof ResourceNotFoundException) {
+            throw (ResourceNotFoundException) ex;
+        }
+
+        User fallbackUser = new User();
+
+        fallbackUser.setId(0L);
+        fallbackUser.setName("Fallback User");
+        fallbackUser.setEmail("fallback@example.com");
+        fallbackUser.setAbout("Service is temporarily unavailable");
+
+        return List.of(fallbackUser);
+    }
+
+
+    // Get user by ID with their ratings and hotel details
     @Override
+    @CircuitBreaker(name = "getUserByIdCircuitBreaker", fallbackMethod = "getUserByIdFallback")
     public User getUserById(Long userId) {
+
+        // Fetch user from DB
         User user = userRepository.findById(userId)
                 .orElseThrow(() -> new ResourceNotFoundException("User not found with id: " + userId));
 
-        // Fetch ratings for the user from the Ratings Service
         Ratings[] ratingsList;
+
         try {
+            // Fetch ratings from Rating Service
             ratingsList = restTemplate.getForObject(
-                    "http://RATINGSERVICE/ratings/user/" + user.getId(), Ratings[].class);
+                    "http://RATINGSERVICE/ratings/user/" + user.getId(),
+                    Ratings[].class);
         }
-        catch (Exception e) {
-            ratingsList = new Ratings[0]; // If there's an error fetching ratings, set it to an empty array
+        catch (HttpClientErrorException.NotFound e) {
+            // User has no ratings
+            ratingsList = new Ratings[0];
+        }
+
+        // Safety check
+        if (ratingsList == null) {
+            ratingsList = new Ratings[0];
         }
 
         List<Ratings> ratings = Arrays.asList(ratingsList);
 
-        // set Hotel details for each rating
+        // Fetch hotel details for each rating
         for (Ratings rating : ratings) {
-            try{
-                Hotel hotel = restTemplate.getForObject(
-                        "http://HOTELSERVICE/hotels/" + rating.getHotelId(), Hotel.class);
-
+            try {
+                Hotel hotel = hotelService.getHotel(rating.getHotelId());
                 rating.setHotel(hotel);
             }
-            catch (Exception e) {
-                rating.setHotel(null); // If there's an error fetching hotel details, set it to null
+            catch (HttpClientErrorException.NotFound e) {
+                // Hotel not found
+                rating.setHotel(null);
             }
         }
-
         user.setRatings(ratings);
         return user;
+    }
+    public User getUserByIdFallback(Long userId, Exception ex) {
+
+        if(ex instanceof ResourceNotFoundException) {
+            throw (ResourceNotFoundException) ex;
+        }
+
+        User fallbackUser = new User();
+
+        fallbackUser.setId(userId);
+        fallbackUser.setName("Fallback User");
+        fallbackUser.setEmail("fallback@example.com");
+        fallbackUser.setAbout("This is a fallback user due to service unavailability.");
+        return fallbackUser;
     }
 
     @Override
